@@ -12,6 +12,8 @@ Software development started 6.8.2023.
 #define TEMP_DEFAULT 55
 #define HOURS_DEFAULT 24
 
+#define DHTPIN 2
+
 byte target_temp = TEMP_DEFAULT;
 byte target_hours = HOURS_DEFAULT;
 byte target_feature = 1;
@@ -23,6 +25,8 @@ byte button_read(void);
 void set_temp(byte *);
 void set_hours(byte *);
 void set_feature(byte *);
+int dht_read(void);
+
 
 void setup() {
   
@@ -37,9 +41,9 @@ void setup() {
 
 void loop() {
   // put your main code here, to run repeatedly:
-  
+
   byte button = 0;
-  button = button_read();
+  button = button_read(); //reading buttons
   
   
   lcd.setCursor(0,0);
@@ -47,6 +51,7 @@ void loop() {
 
 
   if(button != 1){
+    //start button - SELECT not pressed
     if(start_sig==0){
       lcd.print("Set parameters:");
       set_feature(&button);
@@ -70,14 +75,21 @@ void loop() {
   }
   else
   {
+    //start button - SELECT pressed
     start_sig = 1;
     lcd.clear();
   }
   
-
+  //SYSTEM RUNNING IMPLEMENTATION
   if(start_sig == 1)
   {
     lcd.print("System working..");
+    int temperature;
+    temperature = dht_read();
+    lcd.setCursor(0,1);
+    lcd.print("Measured T=");
+    lcd.setCursor(11,1);
+    lcd.print(temperature);
   }
   else
   {
@@ -122,13 +134,13 @@ void set_temp(byte *btn)
   {
     case 3: {
       lcd.print("Pressed: UP");
-      if(target_temp == 70) break;
+      if(target_temp == 70) break; //max temp is 70
       target_temp = target_temp + 1;
       break;
       }
     case 4: {
       lcd.print("Pressed: DOWN");
-      if(target_temp == 20) break;
+      if(target_temp == 20) break; //min temp is 20
       target_temp = target_temp - 1;
       break;
       }
@@ -144,13 +156,13 @@ void set_hours(byte *btn)
   {
     case 3: {
       lcd.print("Pressed: UP");
-      if(target_hours == 48) break;
+      if(target_hours == 48) break; //max hours to work is 48
       target_hours = target_hours + 1;
       break;
       }
     case 4: {
       lcd.print("Pressed: DOWN");
-      if(target_hours == 6) break;
+      if(target_hours == 6) break; //min hours to work is 6
       target_hours = target_hours - 1;
       break;
       }
@@ -175,4 +187,62 @@ void set_feature(byte *btn)
       }
     default: {break;}  
   }  
+}
+
+int dht_read(void)
+{
+    
+    int data[100];
+    int counter = 0;
+    int laststate = HIGH;
+    int j=0;
+
+    pinMode(DHTPIN, OUTPUT);
+
+    //waking up sensor
+    digitalWrite(DHTPIN, HIGH);
+    delay(50);
+    digitalWrite(DHTPIN, LOW);//host sending start signal
+    delay(10);//1-10ms
+
+    pinMode(DHTPIN, INPUT);
+
+    data[0] = data[1] = data[2] = data[3] = data[4] = 0;
+
+    //wait for pin to drop
+    while(digitalRead(DHTPIN) == 1){
+      delayMicroseconds(1);
+      //usleep(1);
+    }
+
+    //read data
+    for (int i=0; i<100; i++){
+      counter = 0;
+      while(digitalRead(DHTPIN) == laststate){
+      counter++;
+      if(counter == 1000)
+        break;
+      }
+    laststate = digitalRead(DHTPIN);
+    if(counter == 1000) break;
+
+      if((i>3) && (i%2 == 0)){
+        data[j/8] <<= 1;
+          if(counter > 200)
+          data[j/8] |= 1;
+        j++;
+      }
+    }
+
+    int h = 0;
+    int t = 0;
+  if ((j >= 39) && (data[4] == ((data[0] + data[1] + data[2] + data[3]) & 0xFF)) ) {
+
+    h = data[0] * 256 + data[1];
+    t = (data[2] & 0x7F)* 256 + data[3];
+      if (data[2] & 0x80)  t *= -1;
+  }
+
+  return t;
+
 }
