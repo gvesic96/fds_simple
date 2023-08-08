@@ -189,6 +189,7 @@ void set_feature(byte *btn)
   }  
 }
 
+
 int dht_read(void)
 {
     
@@ -211,36 +212,43 @@ int dht_read(void)
 
     //wait for pin to drop
     while(digitalRead(DHTPIN) == 1){
-      delayMicroseconds(1);
+      delayMicroseconds(1); //waiting for around 20-40uS
       //usleep(1);
     }
 
-    //read data
+    //read data 
+    //80us LOW as response, and 80us HIGH for preparation to send data
+    //first pulse is 50uS LOW, after 26-28us HIGH for 0, and 70us HIGH for 1
+    //laststate is initially set on HIGH
+    
     for (int i=0; i<100; i++){
       counter = 0;
-      while(digitalRead(DHTPIN) == laststate){
-      counter++;
-      if(counter == 1000)
-        break;
-      }
-    laststate = digitalRead(DHTPIN);
-    if(counter == 1000) break;
+        while(digitalRead(DHTPIN) == laststate){
+          counter++;
+          delayMicroseconds(1);
+          if(counter == 100) break;
+        }
+      
+      laststate = digitalRead(DHTPIN);
+      if(counter == 100) break;
 
       if((i>3) && (i%2 == 0)){
         data[j/8] <<= 1;
-          if(counter > 200)
-          data[j/8] |= 1;
+          if(counter > 10) //if reading zeros reduce number to compare
+          data[j/8] |= 1; //initially j=0 means in first cycle of FOR loop data[0] gets value
         j++;
       }
     }
 
-    int h = 0;
-    int t = 0;
-  if ((j >= 39) && (data[4] == ((data[0] + data[1] + data[2] + data[3]) & 0xFF)) ) {
-
-    h = data[0] * 256 + data[1];
-    t = (data[2] & 0x7F)* 256 + data[3];
-      if (data[2] & 0x80)  t *= -1;
+    
+    int h = 1;
+    int t = 1;
+    if ((j >= 39) && (data[4] == ((data[0] + data[1] + data[2] + data[3]) & 0xFF)) ) {
+                    //checkig cheksum last 8 bits
+      h = data[0] * 256 + data[1];
+      t = (data[2] & 0x7F)* 256 + data[3]; //first bit of 8 temp bits is temperature sign +/-
+      
+      if (data[2] & 0x80)  t *= -1; //first bit value 1 means negative temperature
   }
 
   return t;
