@@ -6,8 +6,26 @@ Software development started 6.8.2023.
 
 */
 
-
+/*2x16 LCD display*/
 #include <LiquidCrystal.h>
+
+/*I2C library*/
+#include <Wire.h>
+
+#define DS3231_I2C_ADDRESS 0x68
+#define changeHexToInt(hex) ((((hex)>>4)*10)+((hex)%16))
+#define SEK 0x00
+#define MIN 0x01
+#define SAT 0x02
+#define DAY 0x03
+#define DATE  0x04
+#define MONTH 0x05
+#define YEAR  0x06
+
+byte ds3231_Store[7];
+byte init3231_Store[7]={0x01,0x01,0x00,0x01,0x01,0x01,0x01};
+
+
 
 #define TEMP_DEFAULT 55
 #define HOURS_DEFAULT 24
@@ -22,10 +40,16 @@ bool start_sig = 0;
 LiquidCrystal lcd(8,9,4,5,6,7);
 
 byte button_read(void);
+
 void set_temp(byte *);
 void set_hours(byte *);
 void set_feature(byte *);
+
 int dht_read(void);
+
+void DS3231_settime(void);
+void DS3231_init(void);
+void DS3231_Readtime(void);
 
 
 void setup() {
@@ -93,6 +117,7 @@ void loop() {
   }
   else
   {
+    //SYSTEM IDLING
     lcd.setCursor(1,1);
     lcd.print("T[C]=");
     lcd.setCursor(6,1);
@@ -233,9 +258,9 @@ int dht_read(void)
       if(counter == 100) break;
 
       if((i>3) && (i%2 == 0)){
-        data[j/8] <<= 1;
-          if(counter > 10) //if reading zeros reduce number to compare
-          data[j/8] |= 1; //initially j=0 means in first cycle of FOR loop data[0] gets value
+        data[j/8] <<= 1; //shifting left by one place and inserting 0
+          if(counter > 10) //if reading all zeros, reduce number to compare
+          data[j/8] |= 1; //if counter is >10 -> pulse>28us and read value is 1
         j++;
       }
     }
@@ -253,4 +278,45 @@ int dht_read(void)
 
   return t;
 
+}
+
+void DS3231_settime(void){
+
+    Wire.beginTransmission(DS3231_I2C_ADDRESS);
+    Wire.write(0); // set next input to start at the SECONDS register (register 0)
+    for(int i=0; i<=6; i++){
+        Wire.write(ds3231_Store[i]);
+    }
+    Wire.endTransmission();
+}
+
+void DS3231_init(void){
+
+    for(int i=0; i<=6; i++)
+        ds3231_Store[i]=init3231_Store[i];
+
+    DS3231_settime();
+}
+
+void DS3231_Readtime(void){
+
+    //unsigned char time_data[7];
+    //int fd =  wiringPiI2CSetup(0x68);
+    Wire.beginTransmission(DS3231_I2C_ADDRESS);
+    Wire.write(0);
+    Wire.endTransmission();
+    Wire.requestFrom(DS3231_I2C_ADDRESS, 7);
+
+    ds3231_Store[0] = Wire.read() & 0x7f; //sec
+    ds3231_Store[1] = Wire.read() & 0x7f; //min
+    ds3231_Store[2] = Wire.read() & 0x3f; //hour
+
+    ds3231_Store[3] = Wire.read() & 0x07; //day
+    ds3231_Store[4] = Wire.read() & 0x3f; //date
+    ds3231_Store[5] = Wire.read() & 0x1f; //month
+    ds3231_Store[6] = Wire.read() & 0xff; //year
+
+    for(int i=0; i<=6; i++){
+        ds3231_Store[i] = changeHexToInt(ds3231_Store[i]);
+    }
 }
