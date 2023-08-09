@@ -3,41 +3,44 @@ Fruit dehydratation system simple version - fds_simple
 
 Grigorije Vesic EE10/2015
 Software development started 6.8.2023.
-
 */
+
+
+/*Libraries*/
 
 /*2x16 LCD display*/
 #include <LiquidCrystal.h>
-
 /*I2C library*/
 #include <Wire.h>
 
-#define DS3231_I2C_ADDRESS 0x68
-#define changeHexToInt(hex) ((((hex)>>4)*10)+((hex)%16))
-#define SEK 0x00
-#define MIN 0x01
-#define SAT 0x02
-#define DAY 0x03
-#define DATE  0x04
-#define MONTH 0x05
-#define YEAR  0x06
-
-byte ds3231_Store[7];
-byte init3231_Store[7]={0x01,0x01,0x00,0x01,0x01,0x01,0x01};
 
 
+/*------------------------ MACROS -------------------------*/
 
 #define TEMP_DEFAULT 55
 #define HOURS_DEFAULT 24
 
 #define DHTPIN 2
 
+#define DS3231_I2C_ADDRESS 0x68
+#define changeHexToInt(hex) ((((hex)>>4)*10)+((hex)%16))
+
+
+/*--------------------- GLOBAL VARIABLES -------------------*/
+
 byte target_temp = TEMP_DEFAULT;
 byte target_hours = HOURS_DEFAULT;
 byte target_feature = 1;
 bool start_sig = 0;
 
+byte ds3231_Store[7] = {0};
+byte init3231_Store[7]={0x01,0x01,0x00,0x01,0x01,0x01,0x01};
+
+
 LiquidCrystal lcd(8,9,4,5,6,7);
+
+
+//------------------- function declarations -----------------
 
 byte button_read(void);
 
@@ -52,11 +55,20 @@ void DS3231_init(void);
 void DS3231_Readtime(void);
 
 
+
+
+
+//------------------------ SETUP FUNCTION -------------------------
+
 void setup() {
-  
+
+  //LIBRARY INITIALIZATION
+  Wire.begin();
   lcd.begin(16,2);
+  
   lcd.setCursor(0,0);
   lcd.print("System starting..");
+  DS3231_init();
   delay(1000);
   lcd.clear();
   // put your setup code here, to run once:
@@ -69,10 +81,8 @@ void loop() {
   byte button = 0;
   button = button_read(); //reading buttons
   
-  
   lcd.setCursor(0,0);
   //set_feature(&button);
-
 
   if(button != 1){
     //start button - SELECT not pressed
@@ -103,17 +113,27 @@ void loop() {
     start_sig = 1;
     lcd.clear();
   }
-  
-  //SYSTEM RUNNING IMPLEMENTATION
+
+
+  //SYSTEM RUNNING
   if(start_sig == 1)
   {
+    
     lcd.print("System working..");
     int temperature;
     temperature = dht_read();
     lcd.setCursor(0,1);
-    lcd.print("Measured T=");
-    lcd.setCursor(11,1);
+    lcd.print("T=");
+    lcd.setCursor(2,1);
     lcd.print(temperature);
+
+    DS3231_Readtime();    
+    lcd.setCursor(7,1);
+    lcd.print("t=");
+    byte t = ds3231_Store[0];
+    lcd.setCursor(9,1);
+    lcd.print(t);
+    delay(600);
   }
   else
   {
@@ -124,7 +144,7 @@ void loop() {
     lcd.print(target_temp);
 
     lcd.setCursor(9,1);
-    lcd.print("H[h]=");
+    lcd.print("t[h]=");
     lcd.setCursor(14,1);
     lcd.print(target_hours);
   
@@ -151,6 +171,9 @@ byte button_read()
 
   return 0; //none button pressed
 }
+
+
+//-------------------------- PARAMETERS SETTING -------------------------
 
 void set_temp(byte *btn)
 {
@@ -181,13 +204,13 @@ void set_hours(byte *btn)
   {
     case 3: {
       lcd.print("Pressed: UP");
-      if(target_hours == 48) break; //max hours to work is 48
+      if(target_hours == 48) break; //max running hours is 48
       target_hours = target_hours + 1;
       break;
       }
     case 4: {
       lcd.print("Pressed: DOWN");
-      if(target_hours == 6) break; //min hours to work is 6
+      if(target_hours == 6) break; //min running hours is 6
       target_hours = target_hours - 1;
       break;
       }
@@ -214,6 +237,9 @@ void set_feature(byte *btn)
   }  
 }
 
+
+
+//------------------------------- DHT22 ----------------------------------------------
 
 int dht_read(void)
 {
@@ -280,10 +306,14 @@ int dht_read(void)
 
 }
 
+
+
+//-------------------------------------- RTC -----------------------------------------
+
 void DS3231_settime(void){
 
     Wire.beginTransmission(DS3231_I2C_ADDRESS);
-    Wire.write(0); // set next input to start at the SECONDS register (register 0)
+    Wire.write(0); // set next input to start at the seconds register (register 0)
     for(int i=0; i<=6; i++){
         Wire.write(ds3231_Store[i]);
     }
@@ -299,9 +329,7 @@ void DS3231_init(void){
 }
 
 void DS3231_Readtime(void){
-
-    //unsigned char time_data[7];
-    //int fd =  wiringPiI2CSetup(0x68);
+  
     Wire.beginTransmission(DS3231_I2C_ADDRESS);
     Wire.write(0);
     Wire.endTransmission();
