@@ -19,11 +19,14 @@ Software development started 6.8.2023.
 
 #define TEMP_DEFAULT 55
 #define HOURS_DEFAULT 24
+#define HEAT_RANGE 3
 
 #define DHTPIN 2
+#define HEATER_PIN 13
 
 #define DS3231_I2C_ADDRESS 0x68
 #define changeHexToInt(hex) ((((hex)>>4)*10)+((hex)%16))
+
 
 
 /*--------------------- GLOBAL VARIABLES -------------------*/
@@ -36,11 +39,16 @@ bool start_sig = 0;
 byte ds3231_Store[7] = {0};
 byte init3231_Store[7]={0x01,0x01,0x00,0x01,0x01,0x01,0x01};
 
+bool heater_permit = 0;
+
 
 LiquidCrystal lcd(8,9,4,5,6,7);
 
 
 //------------------- function declarations -----------------
+
+void system_idle(byte *);
+void system_running(void);
 
 byte button_read(void);
 
@@ -54,7 +62,7 @@ void DS3231_settime(void);
 void DS3231_init(void);
 void DS3231_Readtime(void);
 
-
+void heater_control(void);
 
 
 
@@ -72,6 +80,9 @@ void setup() {
   delay(1000);
   lcd.clear();
   // put your setup code here, to run once:
+
+  pinMode(HEATER_PIN, OUTPUT);
+  digitalWrite(HEATER_PIN, LOW);
 
 }
 
@@ -115,11 +126,29 @@ void loop() {
   }
 
 
-  //SYSTEM RUNNING
+  //SYSTEM OPERATING IN REGARD START/STOP
   if(start_sig == 1)
   {
+    //SYSTEM RUNNING
+    system_running();
     
+  }
+  else
+  {
+    //SYSTEM IDLING
+    system_idle(&button);
+
+  }
+
+}
+
+//--------------------- SYSTEM OPERATING FUNCTIONS -----------------------
+
+//system running
+void system_running(void)
+{
     lcd.print("System working..");
+    
     int temperature;
     temperature = dht_read();
     lcd.setCursor(0,1);
@@ -127,17 +156,31 @@ void loop() {
     lcd.setCursor(2,1);
     lcd.print(temperature);
 
+    //HEATER CONTROL FUNCTION    
+
+    heater_control();
+
+    //FAN CONTROL FUNCTION
+
+    //BACK-COOLER CONTROL FUNCTION
+
     DS3231_Readtime();    
     lcd.setCursor(7,1);
     lcd.print("t=");
-    byte t = ds3231_Store[0];
+    byte t = ds3231_Store[0]; //accessing global variable
     lcd.setCursor(9,1);
     lcd.print(t);
-    delay(600);
-  }
-  else
-  {
-    //SYSTEM IDLING
+    delay(600);  
+  
+}
+
+
+//system idling
+void system_idle(byte *btn)
+{
+  byte tmp_btn = *btn;
+
+  //SYSTEM IDLING
     lcd.setCursor(1,1);
     lcd.print("T[C]=");
     lcd.setCursor(6,1);
@@ -148,15 +191,39 @@ void loop() {
     lcd.setCursor(14,1);
     lcd.print(target_hours);
   
-    if(button!=0) lcd.clear();
-  }
-
+    if(tmp_btn!=0) lcd.clear();
+  
 }
 
+//heater control function
+
+
+void heater_control()
+{
+  //HEATER_PIN is 13
+  int temp = dht_read();
+  //bool heater_permit;//should be global variable? initially set on 0
+    if(temp < (target_temp+HEAT_RANGE) && heater_permit == 0)
+    {
+      digitalWrite(HEATER_PIN, HIGH); //set heater on
+    }
+    else
+    {
+      digitalWrite(HEATER_PIN, LOW); //set heater off
+    }
+
+    if(temp >= (target_temp+HEAT_RANGE) && heater_permit == 0) 
+          heater_permit = 1; //up range exceeded
+    if(temp <= (target_temp-HEAT_RANGE) && heater_permit == 1) 
+          heater_permit = 0; //down range exceeded
+}
+
+
+//button read
 byte button_read()
 {
   int tmp = analogRead(0);  
-  if(tmp<730) delay(120); //button debouncing works for <1023 as well
+  if(tmp<730) delay(140); //button debouncing works for <1023 as well
   
   if(tmp > 710 && tmp<730) //SELECT
     return 1;
