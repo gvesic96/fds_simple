@@ -19,10 +19,11 @@ Software development started 6.8.2023.
 
 #define TEMP_DEFAULT 55
 #define HOURS_DEFAULT 24
-#define HEAT_RANGE 3
+#define HEAT_RANGE 10
+/*All temps are multipled by 10 that is why HEAT_RANGE is 10 -> 1C*/
 
 #define DHTPIN 2
-#define HEATER_PIN 13
+#define HEATER_PIN A1
 
 #define DS3231_I2C_ADDRESS 0x68
 #define changeHexToInt(hex) ((((hex)>>4)*10)+((hex)%16))
@@ -39,7 +40,7 @@ bool start_sig = 0;
 byte ds3231_Store[7] = {0};
 byte init3231_Store[7]={0x01,0x01,0x00,0x01,0x01,0x01,0x01};
 
-bool heater_permit = 0;
+bool heater_permit = 1;
 
 
 LiquidCrystal lcd(8,9,4,5,6,7);
@@ -62,7 +63,7 @@ void DS3231_settime(void);
 void DS3231_init(void);
 void DS3231_Readtime(void);
 
-void heater_control(void);
+void heater_control(int *);
 
 
 
@@ -82,7 +83,7 @@ void setup() {
   // put your setup code here, to run once:
 
   pinMode(HEATER_PIN, OUTPUT);
-  digitalWrite(HEATER_PIN, LOW);
+  digitalWrite(HEATER_PIN, LOW);//relay module is turned off with HIGH signal
 
 }
 
@@ -157,8 +158,7 @@ void system_running(void)
     lcd.print(temperature);
 
     //HEATER CONTROL FUNCTION    
-
-    heater_control();
+    heater_control(&temperature);
 
     //FAN CONTROL FUNCTION
 
@@ -196,26 +196,30 @@ void system_idle(byte *btn)
 }
 
 //heater control function
-
-
-void heater_control()
+//tested with RED LED on A1 and works
+//code does not work with RelayModule directly connected to A1, probably needs to be driven by buffered signal
+/*RELAY DRIVING SIGNAL NEEDS TO BE BUFFERED THROUGH 74HC INVERTOR CIRCUIT*/
+void heater_control(int *temp)
 {
-  //HEATER_PIN is 13
-  int temp = dht_read();
+  //HEATER_PIN is A1
+  int tmp_temp = *temp;
+  int temp_limit = target_temp*10;
   //bool heater_permit;//should be global variable? initially set on 0
-    if(temp < (target_temp+HEAT_RANGE) && heater_permit == 0)
+    if(tmp_temp < (temp_limit+HEAT_RANGE) && heater_permit == 1)
     {
       digitalWrite(HEATER_PIN, HIGH); //set heater on
+      //relay module turns relay ON for LOW signal
     }
     else
     {
       digitalWrite(HEATER_PIN, LOW); //set heater off
+      //relay module turns relay OFF for HIGH signal
     }
 
-    if(temp >= (target_temp+HEAT_RANGE) && heater_permit == 0) 
-          heater_permit = 1; //up range exceeded
-    if(temp <= (target_temp-HEAT_RANGE) && heater_permit == 1) 
-          heater_permit = 0; //down range exceeded
+    if(tmp_temp >= (temp_limit+HEAT_RANGE) && heater_permit == 1) 
+          heater_permit = 0; //up range exceeded
+    if(tmp_temp <= (temp_limit-HEAT_RANGE) && heater_permit == 0) 
+          heater_permit = 1; //down range exceeded
 }
 
 
