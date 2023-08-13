@@ -20,10 +20,15 @@ Software development started 6.8.2023.
 #define TEMP_DEFAULT 55
 #define HOURS_DEFAULT 24
 #define HEAT_RANGE 10
+#define HUMI_RANGE 100
 /*All temps are multipled by 10 that is why HEAT_RANGE is 10 -> 1C*/
+/*All humidities are multipled by 10 that is why HUMI_RANGE is 100 -> 10%*/
+
 
 #define DHTPIN 2
 #define HEATER_PIN A1
+#define CIRCULATION_PIN A2
+#define COOLER_PIN A3
 
 #define DS3231_I2C_ADDRESS 0x68
 #define changeHexToInt(hex) ((((hex)>>4)*10)+((hex)%16))
@@ -41,7 +46,7 @@ byte ds3231_Store[7] = {0};
 byte init3231_Store[7]={0x01,0x01,0x00,0x01,0x01,0x01,0x01};
 
 bool heater_permit = 1;
-
+bool cooler_permit = 0;
 
 LiquidCrystal lcd(8,9,4,5,6,7);
 
@@ -57,15 +62,15 @@ void set_temp(byte *);
 void set_hours(byte *);
 void set_feature(byte *);
 
-int dht_read(void);
+int dht_read(bool);
 
 void DS3231_settime(void);
 void DS3231_init(void);
 void DS3231_Readtime(void);
 
 void heater_control(int *);
-
-
+void circulation_control(void);
+void back_cooler_control(int *);
 
 //------------------------ SETUP FUNCTION -------------------------
 
@@ -85,7 +90,16 @@ void setup() {
   pinMode(HEATER_PIN, OUTPUT);
   digitalWrite(HEATER_PIN, LOW);//relay module is turned off with HIGH signal
 
+  pinMode(CIRCULATION_PIN, OUTPUT);
+  digitalWrite(CIRCULATION_PIN, LOW);
+
+  pinMode(COOLER_PIN, OUTPUT);
+  digitalWrite(COOLER_PIN, LOW);
 }
+
+
+
+//---------WHILE(1)----------
 
 void loop() {
   // put your main code here, to run repeatedly:
@@ -149,9 +163,14 @@ void loop() {
 void system_running(void)
 {
     lcd.print("System working..");
-    
+
+    //maybe better with independent variable and pointer?????
     int temperature;
-    temperature = dht_read();
+    temperature = dht_read(0);//returning temperature for 0
+
+    int humidity;
+    humidity = dht_read(1);//reurning humidity for 1
+    
     lcd.setCursor(0,1);
     lcd.print("T=");
     lcd.setCursor(2,1);
@@ -160,9 +179,11 @@ void system_running(void)
     //HEATER CONTROL FUNCTION    
     heater_control(&temperature);
 
-    //FAN CONTROL FUNCTION
+    //CIRCULATION FAN CONTROL FUNCTION
+    circulation_control();
 
     //BACK-COOLER CONTROL FUNCTION
+    back_cooler_control(&humidity);
 
     DS3231_Readtime();    
     lcd.setCursor(7,1);
@@ -195,10 +216,54 @@ void system_idle(byte *btn)
   
 }
 
+//back cooler control function
+void back_cooler_control(int *humi)
+{
+  //COOLER_PIN is A3
+  int curr_humi = *humi;
+  int humi_limit = 600;//should use macro here
+  //cooling of backplate works regarding to humidity
+  //cooler system does not work until determined humidity range is exceeded, initial cooler_permit = 0
+  //NOT TESTED with LED
+  if(curr_humi > (humi_limit+HUMI_RANGE) && cooler_permit == 1)
+    {
+      digitalWrite(COOLER_PIN, HIGH); //set cooler on
+      //relay module turns relay ON for LOW signal
+    }
+    else
+    {
+      digitalWrite(COOLER_PIN, LOW); //set heater off
+      //relay module turns relay OFF for HIGH signal
+    }
+
+    if(curr_humi >= (humi_limit+HUMI_RANGE) && cooler_permit == 0) 
+          cooler_permit = 1; //up range exceeded
+    if(curr_humi <= (humi_limit-HUMI_RANGE) && cooler_permit == 1) 
+          cooler_permit = 0; //down range exceeded
+  
+}
+
+
+//circulation control function
+void circulation_control(void)
+{
+  //circulation pin is A2
+  if(start_sig == 1)
+  {
+    digitalWrite(CIRCULATION_PIN, HIGH);
+  }
+  else
+  {
+    digitalWrite(CIRCULATION_PIN, LOW);
+  }  
+}
+
+
 //heater control function
 //tested with RED LED on A1 and works
-//code does not work with RelayModule directly connected to A1, probably needs to be driven by buffered signal
-/*RELAY DRIVING SIGNAL NEEDS TO BE BUFFERED THROUGH 74HC INVERTOR CIRCUIT*/
+/*Code does not work with RelayModule directly connected to A1 and arduino 5V
+because relay needs 100-200mA to switch. Relay needs to be supplied by separate
+5V supply, most likely with LM7805 and some capacitors to sustain the surge*/
 void heater_control(int *temp)
 {
   //HEATER_PIN is A1
@@ -312,8 +377,10 @@ void set_feature(byte *btn)
 
 //------------------------------- DHT22 ----------------------------------------------
 
-int dht_read(void)
+int dht_read(bool th)
 {
+    //internal bool variable for decision over Temperature or Humidity
+    bool temp_humi = th;
     
     int data[100];
     int counter = 0;
@@ -363,8 +430,8 @@ int dht_read(void)
     }
 
     
-    int h = 1;
-    int t = 1;
+    int h = 0;
+    int t = 0;
     if ((j >= 39) && (data[4] == ((data[0] + data[1] + data[2] + data[3]) & 0xFF)) ) {
                     //checkig cheksum last 8 bits
       h = data[0] * 256 + data[1];
@@ -373,8 +440,11 @@ int dht_read(void)
       if (data[2] & 0x80)  t *= -1; //first bit value 1 means negative temperature
   }
 
-  return t;
-
+  //returning temperature for parameter 0 or humidity for parameter 1
+  if(!temp_humi)  
+        return t;
+  if(temp_humi)
+        return h;
 }
 
 
