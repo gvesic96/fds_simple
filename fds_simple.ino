@@ -104,8 +104,6 @@ void setup() {
   pinMode(COOLER_PIN, OUTPUT);
   digitalWrite(COOLER_PIN, LOW);//back cooler is turned off
 
-  
-
 }
 
 
@@ -279,13 +277,12 @@ void time_display(void)
     
     switch(ds3231_Store[3])
     {
-      case 1: {hours = target_hours - ds3231_Store[2]; break;}
+      case 1: {hours = target_hours - ds3231_Store[2]; break;} //eventually subtract 1 from target_hours - ds3231_Store[2], make hours int and STOP working at -1 hours value????
       case 2: {hours = (target_hours - ds3231_Store[2]) - 24; break;}
       case 3: {hours = (target_hours - ds3231_Store[2]) - 48; break;}
       default: {hours = 99; break;} //99 is code for error
     }
     
-
     lcd.setCursor(8,0);
     lcd.print(hours);
     lcd.setCursor(10,0);
@@ -296,6 +293,8 @@ void time_display(void)
     lcd.print(":");
     lcd.setCursor(14,0);
     lcd.print(seconds);
+
+    if(hours = 0) start_sig = 0; //STOP system
     
 }
 
@@ -524,16 +523,10 @@ void dht_read(void)
       if (data[2] & 0x80)  t *= -1; //first bit value 1 means negative temperature
   }
 
-
+    //placing temperature and humidity value into global variables
     humidity = h;
     temperature = t;
 
-
-  //returning temperature for parameter 0 or humidity for parameter 1
-  //if(!temp_humi)  
-  //      return t;
-  //if(temp_humi)
-  //      return h;
 }
 
 
