@@ -21,6 +21,7 @@ Software development started 6.8.2023.
 #define HOURS_DEFAULT 24
 #define HEAT_RANGE 10
 #define HUMI_RANGE 100
+#define HUMI_LIMIT 600
 /*All temps are multipled by 10 that is why HEAT_RANGE is 10 -> 1C*/
 /*All humidities are multipled by 10 that is why HUMI_RANGE is 100 -> 10%*/
 
@@ -43,15 +44,18 @@ byte target_feature = 1;
 bool start_sig = 0;
 
 byte ds3231_Store[7] = {0};
-byte init3231_Store[7]={0x01,0x01,0x00,0x01,0x01,0x01,0x01};
+byte init3231_Store[7]={0x01,0x01,0x00,0x01,0x01,0x01,0x01};//setting time to 00:01:01, day 1
 
 bool heater_permit = 1;
 bool cooler_permit = 0;
 
+int temperature = 0;
+int humidity = 0;
+
 LiquidCrystal lcd(8,9,4,5,6,7);
 
 
-//------------------- function declarations -----------------
+//------------------- function declarations -----------------------
 
 void system_idle(byte *);
 void system_running(void);
@@ -62,15 +66,19 @@ void set_temp(byte *);
 void set_hours(byte *);
 void set_feature(byte *);
 
-int dht_read(bool);
+void dht_read(void);
 
 void DS3231_settime(void);
 void DS3231_init(void);
 void DS3231_Readtime(void);
 
+void time_display(void);
+
 void heater_control(int *);
 void circulation_control(void);
 void back_cooler_control(int *);
+
+
 
 //------------------------ SETUP FUNCTION -------------------------
 
@@ -91,10 +99,13 @@ void setup() {
   digitalWrite(HEATER_PIN, LOW);//relay module is turned off with HIGH signal
 
   pinMode(CIRCULATION_PIN, OUTPUT);
-  digitalWrite(CIRCULATION_PIN, LOW);
+  digitalWrite(CIRCULATION_PIN, LOW);//air circulation is turned off
 
   pinMode(COOLER_PIN, OUTPUT);
-  digitalWrite(COOLER_PIN, LOW);
+  digitalWrite(COOLER_PIN, LOW);//back cooler is turned off
+
+  
+
 }
 
 
@@ -118,13 +129,13 @@ void loop() {
       switch(target_feature)
       {
         case 1:{
-         set_temp(&button);
+         set_temp(&button);//SETTING OF TEMPERATURE
          lcd.setCursor(0,1);
          lcd.print(">");
          break;
         }
         case 2:{
-         set_hours(&button);
+         set_hours(&button);//SETTING OF RUNNING HOURS
          lcd.setCursor(8,1);
          lcd.print(">");
          break;
@@ -137,6 +148,7 @@ void loop() {
   {
     //start button - SELECT pressed
     start_sig = 1;
+    DS3231_init(); //INITIALIZE TIME AS 00:01:01 day 1 when system start working
     lcd.clear();
   }
 
@@ -157,25 +169,63 @@ void loop() {
 
 }
 
+
+
+
 //--------------------- SYSTEM OPERATING FUNCTIONS -----------------------
 
 //system running
 void system_running(void)
 {
-    lcd.print("System working..");
+    lcd.clear();
+    lcd.print("RUNNING:");
 
+
+    /*
     //maybe better with independent variable and pointer?????
     int temperature;
-    temperature = dht_read(0);//returning temperature for 0
+    temperature = dht_read();//returning temperature for 0
 
-    int humidity;
-    humidity = dht_read(1);//reurning humidity for 1
-    
+    int humidity = 50;
+    //humidity = dht_read(1);//reurning humidity for 1
+    */
+
+    dht_read();
+
+    //TEMPERATURE PRINTING
+    byte t_main = 0;
+    byte t_decimal = 0;
+    t_main = temperature / 10;
+    t_decimal = temperature % 10;
+
     lcd.setCursor(0,1);
     lcd.print("T=");
     lcd.setCursor(2,1);
-    lcd.print(temperature);
-
+    lcd.print(t_main);
+    lcd.setCursor(4,1);
+    lcd.print(".");
+    lcd.setCursor(5,1);
+    lcd.print(t_decimal);
+    lcd.setCursor(6,1);
+    lcd.print("C");
+    
+    //HUMIDITY PRINTING
+    byte h_main = 0;
+    byte h_decimal = 0;
+    h_main = humidity / 10;
+    h_decimal = humidity % 10;
+    
+    lcd.setCursor(8,1);
+    lcd.print("H=");
+    lcd.setCursor(10,1);
+    lcd.print(h_main);
+    lcd.setCursor(12,1);
+    lcd.print(".");
+    lcd.setCursor(13,1);
+    lcd.print(t_decimal);
+    lcd.setCursor(14,1);
+    lcd.print("%");
+    
     //HEATER CONTROL FUNCTION    
     heater_control(&temperature);
 
@@ -185,14 +235,10 @@ void system_running(void)
     //BACK-COOLER CONTROL FUNCTION
     back_cooler_control(&humidity);
 
-    DS3231_Readtime();    
-    lcd.setCursor(7,1);
-    lcd.print("t=");
-    byte t = ds3231_Store[0]; //accessing global variable
-    lcd.setCursor(9,1);
-    lcd.print(t);
-    delay(600);  
-  
+    //TIME DISPLAYING FUNCTION
+    time_display();
+
+    delay(1000);
 }
 
 
@@ -216,16 +262,53 @@ void system_idle(byte *btn)
   
 }
 
+
+
+//UNFINISHED FUNCTION
+void time_display(void)
+{
+    DS3231_Readtime();//current time read and placed into global array
+    
+    byte seconds = 0;
+    byte minutes = 0;
+    byte hours = 0;
+    
+    seconds = abs(ds3231_Store[0] - 59);
+    minutes = abs(ds3231_Store[1] - 59);
+    
+    
+    switch(ds3231_Store[3])
+    {
+      case 1: {hours = target_hours - ds3231_Store[2]; break;}
+      case 2: {hours = (target_hours - ds3231_Store[2]) - 24; break;}
+      case 3: {hours = (target_hours - ds3231_Store[2]) - 48; break;}
+      default: {hours = 99; break;} //99 is code for error
+    }
+    
+
+    lcd.setCursor(8,0);
+    lcd.print(hours);
+    lcd.setCursor(10,0);
+    lcd.print(":");
+    lcd.setCursor(11,0);
+    lcd.print(minutes);
+    lcd.setCursor(13,0);
+    lcd.print(":");
+    lcd.setCursor(14,0);
+    lcd.print(seconds);
+    
+}
+
+
 //back cooler control function
 void back_cooler_control(int *humi)
 {
   //COOLER_PIN is A3
   int curr_humi = *humi;
-  int humi_limit = 600;//should use macro here
   //cooling of backplate works regarding to humidity
   //cooler system does not work until determined humidity range is exceeded, initial cooler_permit = 0
   //NOT TESTED with LED
-  if(curr_humi > (humi_limit+HUMI_RANGE) && cooler_permit == 1)
+  if(curr_humi > (HUMI_LIMIT+HUMI_RANGE) && cooler_permit == 1)
     {
       digitalWrite(COOLER_PIN, HIGH); //set cooler on
       //relay module turns relay ON for LOW signal
@@ -236,9 +319,10 @@ void back_cooler_control(int *humi)
       //relay module turns relay OFF for HIGH signal
     }
 
-    if(curr_humi >= (humi_limit+HUMI_RANGE) && cooler_permit == 0) 
+    //HUMI_LIMIT = 600, fixed value 60% humidity
+    if(curr_humi >= (HUMI_LIMIT+HUMI_RANGE) && cooler_permit == 0) 
           cooler_permit = 1; //up range exceeded
-    if(curr_humi <= (humi_limit-HUMI_RANGE) && cooler_permit == 1) 
+    if(curr_humi <= (HUMI_LIMIT-HUMI_RANGE) && cooler_permit == 1) 
           cooler_permit = 0; //down range exceeded
   
 }
@@ -377,10 +461,10 @@ void set_feature(byte *btn)
 
 //------------------------------- DHT22 ----------------------------------------------
 
-int dht_read(bool th)
+void dht_read(void)
 {
     //internal bool variable for decision over Temperature or Humidity
-    bool temp_humi = th;
+    //bool temp_humi = th;
     
     int data[100];
     int counter = 0;
@@ -440,11 +524,16 @@ int dht_read(bool th)
       if (data[2] & 0x80)  t *= -1; //first bit value 1 means negative temperature
   }
 
+
+    humidity = h;
+    temperature = t;
+
+
   //returning temperature for parameter 0 or humidity for parameter 1
-  if(!temp_humi)  
-        return t;
-  if(temp_humi)
-        return h;
+  //if(!temp_humi)  
+  //      return t;
+  //if(temp_humi)
+  //      return h;
 }
 
 
