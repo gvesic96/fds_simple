@@ -10,10 +10,12 @@ Software development started 6.8.2023.
 
 /*2x16 LCD display*/
 #include <LiquidCrystal.h>
+
 /*I2C library*/
 #include <Wire.h>
 
-
+/*WatchDog timer*/
+#include <avr/wdt.h>
 
 /*------------------------ MACROS -------------------------*/
 
@@ -21,7 +23,7 @@ Software development started 6.8.2023.
 #define HOURS_DEFAULT 24
 #define HEAT_RANGE 10
 #define HUMI_RANGE 100
-#define HUMI_LIMIT 600
+#define HUMI_LIMIT 650
 /*All temps are multipled by 10 that is why HEAT_RANGE is 10 -> 1C*/
 /*All humidities are multipled by 10 that is why HUMI_RANGE is 100 -> 10%*/
 
@@ -79,7 +81,6 @@ void circulation_control(void);
 void back_cooler_control(int *);
 
 
-
 //------------------------ SETUP FUNCTION -------------------------
 
 void setup() {
@@ -92,11 +93,13 @@ void setup() {
   lcd.print("System starting..");
   DS3231_init();
   delay(1000);
-  lcd.clear();
+  //lcd.clear();
   // put your setup code here, to run once:
 
   pinMode(HEATER_PIN, OUTPUT);
-  digitalWrite(HEATER_PIN, LOW);//relay module is turned off with HIGH signal
+  //digitalWrite(HEATER_PIN, LOW);//relay module is turned off with HIGH signal
+  digitalWrite(HEATER_PIN, HIGH);//relay module is turned off with HIGH signal
+
 
   pinMode(CIRCULATION_PIN, OUTPUT);
   digitalWrite(CIRCULATION_PIN, LOW);//air circulation is turned off
@@ -104,6 +107,13 @@ void setup() {
   pinMode(COOLER_PIN, OUTPUT);
   digitalWrite(COOLER_PIN, LOW);//back cooler is turned off
 
+  //watchdog timer functionality
+  wdt_disable();
+  delay(3000);
+  wdt_enable(WDTO_4S); //set watchdog timer at 4 seconds
+
+
+  lcd.clear();
 }
 
 
@@ -117,39 +127,6 @@ void loop() {
   button = button_read(); //reading buttons
   
   lcd.setCursor(0,0);
-  //set_feature(&button);
-
-  if(button != 1){
-    //start button - SELECT not pressed
-    if(start_sig==0){
-      lcd.print("Set parameters:");
-      set_feature(&button);
-      switch(target_feature)
-      {
-        case 1:{
-         set_temp(&button);//SETTING OF TEMPERATURE
-         lcd.setCursor(0,1);
-         lcd.print(">");
-         break;
-        }
-        case 2:{
-         set_hours(&button);//SETTING OF RUNNING HOURS
-         lcd.setCursor(8,1);
-         lcd.print(">");
-         break;
-        }
-        default: break; 
-      }
-    }
-  }
-  else
-  {
-    //start button - SELECT pressed
-    start_sig = 1;
-    DS3231_init(); //INITIALIZE TIME AS 00:01:01 day 1 when system start working
-    lcd.clear();
-  }
-
 
   //SYSTEM OPERATING IN REGARD START/STOP
   if(start_sig == 1)
@@ -175,20 +152,12 @@ void loop() {
 //system running
 void system_running(void)
 {
+    dht_read();
+    
     lcd.clear();
     lcd.print("RUNNING:");
 
-
-    /*
-    //maybe better with independent variable and pointer?????
-    int temperature;
-    temperature = dht_read();//returning temperature for 0
-
-    int humidity = 50;
-    //humidity = dht_read(1);//reurning humidity for 1
-    */
-
-    dht_read();
+    //dht_read();
 
     //TEMPERATURE PRINTING
     byte t_main = 0;
@@ -205,8 +174,8 @@ void system_running(void)
     lcd.setCursor(5,1);
     lcd.print(t_decimal);
     lcd.setCursor(6,1);
-    lcd.print("C");
-    
+    lcd.print("C");  
+
     //HUMIDITY PRINTING
     byte h_main = 0;
     byte h_decimal = 0;
@@ -220,9 +189,10 @@ void system_running(void)
     lcd.setCursor(12,1);
     lcd.print(".");
     lcd.setCursor(13,1);
-    lcd.print(t_decimal);
+    lcd.print(h_decimal);
     lcd.setCursor(14,1);
     lcd.print("%");
+    
     
     //HEATER CONTROL FUNCTION    
     heater_control(&temperature);
@@ -236,15 +206,53 @@ void system_running(void)
     //TIME DISPLAYING FUNCTION
     time_display();
 
-    delay(1000);
+    /***********WATCHDOG TIMER RESET*********/
+    wdt_reset();
+
+    delay(1000); //if it is 200 code does not work??????? WHY???? PROBABLY INTERFERING WITH SENSOR
 }
+
 
 
 //system idling
 void system_idle(byte *btn)
 {
   byte tmp_btn = *btn;
+  lcd.setCursor(0,0);
+//-------------------------------- ovo je dodato
+    if(tmp_btn != 1){
+    //do not start, button != 1 -> SELECT not pressed
+      
+        lcd.print("Set parameters:");
+        set_feature(&tmp_btn);
+        switch(target_feature)
+        {
+          case 1:{
+            set_temp(&tmp_btn);//SETTING OF TEMPERATURE
+            lcd.setCursor(0,1);
+            lcd.print(">");
+            break;
+            }
+          case 2:{
+            set_hours(&tmp_btn);//SETTING OF RUNNING HOURS
+            lcd.setCursor(8,1);
+            lcd.print(">");
+            break;
+            }
+          default: break; 
+        }
+      
+    }
+    else
+    {
+    //start, button = 1 -> SELECT pressed
+    start_sig = 1;
+    DS3231_init(); //INITIALIZE TIME AS 00:01:01 day 1 when system start working IMPORTANT
+    lcd.clear();
+    }
 
+//---------------------------------------- do ovoga je dodato
+    
   //SYSTEM IDLING
     lcd.setCursor(1,1);
     lcd.print("T[C]=");
@@ -257,12 +265,15 @@ void system_idle(byte *btn)
     lcd.print(target_hours);
   
     if(tmp_btn!=0) lcd.clear();
-  
+
+    /***********WATCHDOG TIMER RESET*********/
+    wdt_reset();
 }
 
 
+//------------------------ SYSTEM FUNCTIONS -------------------------
 
-//UNFINISHED FUNCTION
+
 void time_display(void)
 {
     DS3231_Readtime();//current time read and placed into global array
@@ -318,7 +329,7 @@ void back_cooler_control(int *humi)
       //relay module turns relay OFF for HIGH signal
     }
 
-    //HUMI_LIMIT = 600, fixed value 60% humidity
+    //HUMI_LIMIT = 700, fixed value 70% humidity
     if(curr_humi >= (HUMI_LIMIT+HUMI_RANGE) && cooler_permit == 0) 
           cooler_permit = 1; //up range exceeded
     if(curr_humi <= (HUMI_LIMIT-HUMI_RANGE) && cooler_permit == 1) 
@@ -355,12 +366,12 @@ void heater_control(int *temp)
   //bool heater_permit;//should be global variable? initially set on 0
     if(tmp_temp < (temp_limit+HEAT_RANGE) && heater_permit == 1)
     {
-      digitalWrite(HEATER_PIN, HIGH); //set heater on
+      digitalWrite(HEATER_PIN, LOW); //set heater on
       //relay module turns relay ON for LOW signal
     }
     else
     {
-      digitalWrite(HEATER_PIN, LOW); //set heater off
+      digitalWrite(HEATER_PIN, HIGH); //set heater off
       //relay module turns relay OFF for HIGH signal
     }
 
