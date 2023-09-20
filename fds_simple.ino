@@ -23,7 +23,7 @@ Software development started 6.8.2023.
 #define HOURS_DEFAULT 24
 #define HEAT_RANGE 10
 #define HUMI_RANGE 100
-#define HUMI_LIMIT 650
+#define HUMI_LIMIT 750
 /*All temps are multipled by 10 that is why HEAT_RANGE is 10 -> 1C*/
 /*All humidities are multipled by 10 that is why HUMI_RANGE is 100 -> 10%*/
 
@@ -316,9 +316,9 @@ void back_cooler_control(int *humi)
   //COOLER_PIN is A3
   int curr_humi = *humi;
   //cooling of backplate works regarding to humidity
-  //cooler system does not work until determined humidity range is exceeded, initial cooler_permit = 0
-  //NOT TESTED with LED
-  if(curr_humi > (HUMI_LIMIT+HUMI_RANGE) && cooler_permit == 1)
+  /*cooler system does not work until limit is exceeded, after that it will turn off when humidity value is lower than limit - range
+  after which it can only be turned back on again after limit is exceeded*/
+  if(curr_humi > (HUMI_LIMIT-HUMI_RANGE) && cooler_permit == 1)
     {
       digitalWrite(COOLER_PIN, HIGH); //set cooler on
       //relay module turns relay ON for LOW signal
@@ -329,11 +329,11 @@ void back_cooler_control(int *humi)
       //relay module turns relay OFF for HIGH signal
     }
 
-    //HUMI_LIMIT = 700, fixed value 70% humidity
-    if(curr_humi >= (HUMI_LIMIT+HUMI_RANGE) && cooler_permit == 0) 
-          cooler_permit = 1; //up range exceeded
+    //HUMI_LIMIT = 750, fixed value 75% humidity, HUMI_RANGE 100 -> 10%
+    if(curr_humi >= HUMI_LIMIT) 
+          cooler_permit = 1; //up range exceeded, turn 
     if(curr_humi <= (HUMI_LIMIT-HUMI_RANGE) && cooler_permit == 1) 
-          cooler_permit = 0; //down range exceeded
+          cooler_permit = 0; //down range exceeded, turn off cooler
   
 }
 
