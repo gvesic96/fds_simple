@@ -74,12 +74,14 @@ void DS3231_settime(void);
 void DS3231_init(void);
 void DS3231_Readtime(void);
 
-void time_display(void);
+byte time_display(void);
 
 void heater_control(int *);
 void circulation_control(void);
 void back_cooler_control(int *);
 
+void running_temp_print(void);
+void running_humi_print(void);    
 
 //------------------------ SETUP FUNCTION -------------------------
 
@@ -142,6 +144,9 @@ void loop() {
 
   }
 
+  /***********WATCHDOG TIMER RESET*********/
+  wdt_reset();
+
 }
 
 
@@ -157,41 +162,11 @@ void system_running(void)
     lcd.clear();
     lcd.print("RUNNING:");
 
-    //dht_read();
-
     //TEMPERATURE PRINTING
-    byte t_main = 0;
-    byte t_decimal = 0;
-    t_main = temperature / 10;
-    t_decimal = temperature % 10;
-
-    lcd.setCursor(0,1);
-    lcd.print("T=");
-    lcd.setCursor(2,1);
-    lcd.print(t_main);
-    lcd.setCursor(4,1);
-    lcd.print(".");
-    lcd.setCursor(5,1);
-    lcd.print(t_decimal);
-    lcd.setCursor(6,1);
-    lcd.print("C");  
-
-    //HUMIDITY PRINTING
-    byte h_main = 0;
-    byte h_decimal = 0;
-    h_main = humidity / 10;
-    h_decimal = humidity % 10;
+    running_temp_print();
     
-    lcd.setCursor(8,1);
-    lcd.print("H=");
-    lcd.setCursor(10,1);
-    lcd.print(h_main);
-    lcd.setCursor(12,1);
-    lcd.print(".");
-    lcd.setCursor(13,1);
-    lcd.print(h_decimal);
-    lcd.setCursor(14,1);
-    lcd.print("%");
+    //HUMIDITY PRINTING
+    running_humi_print();
     
     
     //HEATER CONTROL FUNCTION    
@@ -204,12 +179,10 @@ void system_running(void)
     back_cooler_control(&humidity);
 
     //TIME DISPLAYING FUNCTION
-    time_display();
+    byte hours = time_display();
+    if(hours == 0) start_sig = 0;
 
-    /***********WATCHDOG TIMER RESET*********/
-    wdt_reset();
-
-    delay(1000); //if it is 200 code does not work??????? WHY???? PROBABLY INTERFERING WITH SENSOR
+    delay(1000); //if it is 200 code does not work??????? WHY???? PROBABLY INTERFERING WITH SENSOR oR RTC?
 }
 
 
@@ -266,21 +239,62 @@ void system_idle(byte *btn)
   
     if(tmp_btn!=0) lcd.clear();
 
-    /***********WATCHDOG TIMER RESET*********/
-    wdt_reset();
 }
 
 
 //------------------------ SYSTEM FUNCTIONS -------------------------
 
+void running_temp_print(void)
+{
+    //TEMPERATURE PRINTING
+    byte t_main = 0;
+    byte t_decimal = 0;
+    t_main = temperature / 10;
+    t_decimal = temperature % 10;
 
-void time_display(void)
+    lcd.setCursor(0,1);
+    lcd.print("T=");
+    lcd.setCursor(2,1);
+    lcd.print(t_main);
+    lcd.setCursor(4,1);
+    lcd.print(".");
+    lcd.setCursor(5,1);
+    lcd.print(t_decimal);
+    lcd.setCursor(6,1);
+    lcd.print("C");    
+}
+
+
+void running_humi_print(void)
+{
+    //HUMIDITY PRINTING
+    byte h_main = 0;
+    byte h_decimal = 0;
+    h_main = humidity / 10;
+    h_decimal = humidity % 10;
+    
+    lcd.setCursor(8,1);
+    lcd.print("H=");
+    lcd.setCursor(10,1);
+    lcd.print(h_main);
+    lcd.setCursor(12,1);
+    lcd.print(".");
+    lcd.setCursor(13,1);
+    lcd.print(h_decimal);
+    lcd.setCursor(14,1);
+    lcd.print("%");  
+}
+
+
+byte time_display(void)
 {
     DS3231_Readtime();//current time read and placed into global array
     
     byte seconds = 0;
     byte minutes = 0;
     byte hours = 0;
+
+    byte hours_print_tmp = 0;
     
     seconds = abs(ds3231_Store[0] - 59);
     minutes = abs(ds3231_Store[1] - 59);
@@ -288,14 +302,17 @@ void time_display(void)
     
     switch(ds3231_Store[3])
     {
+      //just initialize time at 1 hour from the start???????? no, hours_tmp = hours - 1;
       case 1: {hours = target_hours - ds3231_Store[2]; break;} //eventually subtract 1 from target_hours - ds3231_Store[2], make hours int and STOP working at -1 hours value????
       case 2: {hours = (target_hours - ds3231_Store[2]) - 24; break;}
       case 3: {hours = (target_hours - ds3231_Store[2]) - 48; break;}
       default: {hours = 99; break;} //99 is code for error
     }
+
+    hours_print_tmp = hours - 1;
     
     lcd.setCursor(8,0);
-    lcd.print(hours);
+    lcd.print(hours_print_tmp);
     lcd.setCursor(10,0);
     lcd.print(":");
     lcd.setCursor(11,0);
@@ -305,8 +322,8 @@ void time_display(void)
     lcd.setCursor(14,0);
     lcd.print(seconds);
 
-    if(hours = 0) start_sig = 0; //STOP system
-    
+    //if(hours = 0) start_sig = 0; //STOP system
+    return hours;
 }
 
 
@@ -321,17 +338,15 @@ void back_cooler_control(int *humi)
   if(curr_humi > (HUMI_LIMIT-HUMI_RANGE) && cooler_permit == 1)
     {
       digitalWrite(COOLER_PIN, HIGH); //set cooler on
-      //relay module turns relay ON for LOW signal
     }
     else
     {
-      digitalWrite(COOLER_PIN, LOW); //set heater off
-      //relay module turns relay OFF for HIGH signal
+      digitalWrite(COOLER_PIN, LOW); //set cooler off
     }
 
     //HUMI_LIMIT = 750, fixed value 75% humidity, HUMI_RANGE 100 -> 10%
     if(curr_humi >= HUMI_LIMIT) 
-          cooler_permit = 1; //up range exceeded, turn 
+          cooler_permit = 1; //up range exceeded, permit turning on 
     if(curr_humi <= (HUMI_LIMIT-HUMI_RANGE) && cooler_permit == 1) 
           cooler_permit = 0; //down range exceeded, turn off cooler
   
@@ -386,7 +401,7 @@ void heater_control(int *temp)
 byte button_read()
 {
   int tmp = analogRead(0);  
-  if(tmp<730) delay(140); //button debouncing works for <1023 as well
+  if(tmp<730) delay(140); //button debouncing 140ms, works for tmp<1023 as well
   
   if(tmp > 710 && tmp<730) //SELECT
     return 1;
@@ -411,13 +426,13 @@ void set_temp(byte *btn)
   switch(tmp_btn)
   {
     case 3: {
-      lcd.print("Pressed: UP");
+      //lcd.print("Pressed: UP");
       if(target_temp == 70) break; //max temp is 70
       target_temp = target_temp + 1;
       break;
       }
     case 4: {
-      lcd.print("Pressed: DOWN");
+      //lcd.print("Pressed: DOWN");
       if(target_temp == 20) break; //min temp is 20
       target_temp = target_temp - 1;
       break;
@@ -433,13 +448,13 @@ void set_hours(byte *btn)
   switch(tmp_btn)
   {
     case 3: {
-      lcd.print("Pressed: UP");
+      //lcd.print("Pressed: UP");
       if(target_hours == 48) break; //max running hours is 48
       target_hours = target_hours + 1;
       break;
       }
     case 4: {
-      lcd.print("Pressed: DOWN");
+      //lcd.print("Pressed: DOWN");
       if(target_hours == 6) break; //min running hours is 6
       target_hours = target_hours - 1;
       break;
@@ -455,12 +470,12 @@ void set_feature(byte *btn)
   {
     case 2: {
       target_feature = 1;
-      lcd.print("Pressed: LEFT");
+      //lcd.print("Pressed: LEFT");
       break;
       }
     case 5: {
       target_feature = 2;
-      lcd.print("Pressed: RIGHT"); 
+      //lcd.print("Pressed: RIGHT"); 
       break;
       }
     default: {break;}  
