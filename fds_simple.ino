@@ -64,10 +64,12 @@ void system_running(void);
 
 byte button_read(void);
 
+void set_parameters(byte *);
 void set_temp(byte *);
 void set_hours(byte *);
 void set_feature(byte *);
-
+void start_system(byte *);
+void idle_print(void);
 void dht_read(void);
 
 void DS3231_settime(void);
@@ -96,10 +98,10 @@ void setup() {
   DS3231_init();
   delay(1000);
   //lcd.clear();
+  
   // put your setup code here, to run once:
 
   pinMode(HEATER_PIN, OUTPUT);
-  //digitalWrite(HEATER_PIN, LOW);//relay module is turned off with HIGH signal
   digitalWrite(HEATER_PIN, HIGH);//relay module is turned off with HIGH signal
 
 
@@ -111,8 +113,8 @@ void setup() {
 
   //watchdog timer functionality
   wdt_disable();
-  delay(3000);
-  wdt_enable(WDTO_4S); //set watchdog timer at 4 seconds
+  delay(3000); //important delay to avoid reboot loop
+  wdt_enable(WDTO_8S); //set watchdog timer at 4 seconds
 
 
   lcd.clear();
@@ -125,10 +127,10 @@ void setup() {
 void loop() {
   // put your main code here, to run repeatedly:
 
+
+  //reading buttons
   byte button = 0;
-  button = button_read(); //reading buttons
-  
-  lcd.setCursor(0,0);
+  button = button_read();
 
   //SYSTEM OPERATING IN REGARD START/STOP
   if(start_sig == 1)
@@ -143,7 +145,7 @@ void loop() {
     system_idle(&button);
 
   }
-
+  
   /***********WATCHDOG TIMER RESET*********/
   wdt_reset();
 
@@ -192,8 +194,57 @@ void system_idle(byte *btn)
 {
   byte tmp_btn = *btn;
   lcd.setCursor(0,0);
-//-------------------------------- ovo je dodato
-    if(tmp_btn != 1){
+  
+    
+  heater_control(&temperature);
+  circulation_control();
+  back_cooler_control(&humidity);
+
+  set_parameters(&tmp_btn);
+
+  idle_print();
+
+  start_system(&tmp_btn);
+  
+  if(tmp_btn!=0) lcd.clear();
+
+}
+
+
+//------------------------ SYSTEM FUNCTIONS -------------------------
+
+void idle_print(void)
+{
+//SYSTEM IDLING
+  lcd.setCursor(1,1);
+  lcd.print("T[C]=");
+  lcd.setCursor(6,1);
+  lcd.print(target_temp);
+
+  lcd.setCursor(9,1);
+  lcd.print("t[h]=");
+  lcd.setCursor(14,1);
+  lcd.print(target_hours);
+  
+}
+
+void start_system(byte *btn)
+{
+  byte tmp_btn = *btn;
+  if(tmp_btn == 1)
+  {
+    //start, button = 1 -> SELECT pressed
+    start_sig = 1;
+    DS3231_init(); //INITIALIZE TIME AS 00:01:01 day 1 when system start working IMPORTANT
+    lcd.clear();
+  }  
+}
+
+
+void set_parameters(byte *btn)
+{
+  byte tmp_btn = *btn;
+  if(tmp_btn != 1){
     //do not start, button != 1 -> SELECT not pressed
       
         lcd.print("Set parameters:");
@@ -216,33 +267,8 @@ void system_idle(byte *btn)
         }
       
     }
-    else
-    {
-    //start, button = 1 -> SELECT pressed
-    start_sig = 1;
-    DS3231_init(); //INITIALIZE TIME AS 00:01:01 day 1 when system start working IMPORTANT
-    lcd.clear();
-    }
-
-//---------------------------------------- do ovoga je dodato
-    
-  //SYSTEM IDLING
-    lcd.setCursor(1,1);
-    lcd.print("T[C]=");
-    lcd.setCursor(6,1);
-    lcd.print(target_temp);
-
-    lcd.setCursor(9,1);
-    lcd.print("t[h]=");
-    lcd.setCursor(14,1);
-    lcd.print(target_hours);
-  
-    if(tmp_btn!=0) lcd.clear();
-
 }
 
-
-//------------------------ SYSTEM FUNCTIONS -------------------------
 
 void running_temp_print(void)
 {
@@ -322,7 +348,6 @@ byte time_display(void)
     lcd.setCursor(14,0);
     lcd.print(seconds);
 
-    //if(hours = 0) start_sig = 0; //STOP system
     return hours;
 }
 
@@ -330,6 +355,9 @@ byte time_display(void)
 //back cooler control function
 void back_cooler_control(int *humi)
 {
+  if(start_sig == 1)
+  {
+  
   //COOLER_PIN is A3
   int curr_humi = *humi;
   //cooling of backplate works regarding to humidity
@@ -349,6 +377,12 @@ void back_cooler_control(int *humi)
           cooler_permit = 1; //up range exceeded, permit turning on 
     if(curr_humi <= (HUMI_LIMIT-HUMI_RANGE) && cooler_permit == 1) 
           cooler_permit = 0; //down range exceeded, turn off cooler
+
+  }
+  else
+  {
+    digitalWrite(COOLER_PIN, LOW); //set cooler off 
+  }
   
 }
 
@@ -369,31 +403,35 @@ void circulation_control(void)
 
 
 //heater control function
-//tested with RED LED on A1 and works
-/*Code does not work with RelayModule directly connected to A1 and arduino 5V
-because relay needs 100-200mA to switch. Relay needs to be supplied by separate
-5V supply, most likely with LM7805 and some capacitors to sustain the surge*/
 void heater_control(int *temp)
 {
-  //HEATER_PIN is A1
-  int tmp_temp = *temp;
-  int temp_limit = target_temp*10;
-  //bool heater_permit;//should be global variable? initially set on 0
-    if(tmp_temp < (temp_limit+HEAT_RANGE) && heater_permit == 1)
-    {
-      digitalWrite(HEATER_PIN, LOW); //set heater on
-      //relay module turns relay ON for LOW signal
-    }
-    else
-    {
-      digitalWrite(HEATER_PIN, HIGH); //set heater off
-      //relay module turns relay OFF for HIGH signal
-    }
+  
+  if(start_sig == 1){
+    //HEATER_PIN is A1
+    int tmp_temp = *temp;
+    int temp_limit = target_temp*10;
+      //bool heater_permit;//should be global variable? initially set on 0
+      if(tmp_temp < (temp_limit+HEAT_RANGE) && heater_permit == 1)
+      {
+        digitalWrite(HEATER_PIN, LOW); //set heater on
+        //relay module turns relay ON for LOW signal
+      }
+      else
+      {
+        digitalWrite(HEATER_PIN, HIGH); //set heater off
+        //relay module turns relay OFF for HIGH signal
+      }
 
     if(tmp_temp >= (temp_limit+HEAT_RANGE) && heater_permit == 1) 
           heater_permit = 0; //up range exceeded
     if(tmp_temp <= (temp_limit-HEAT_RANGE) && heater_permit == 0) 
           heater_permit = 1; //down range exceeded
+  }
+  else
+  {
+    digitalWrite(HEATER_PIN, HIGH); //set heater relay off
+  }
+
 }
 
 
@@ -488,8 +526,6 @@ void set_feature(byte *btn)
 
 void dht_read(void)
 {
-    //internal bool variable for decision over Temperature or Humidity
-    //bool temp_humi = th;
     
     int data[100];
     int counter = 0;
