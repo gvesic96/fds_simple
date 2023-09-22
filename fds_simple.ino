@@ -54,6 +54,11 @@ bool cooler_permit = 0;
 int temperature = 0;
 int humidity = 0;
 
+bool rst_flag = 0;
+bool rst_type = 0;
+
+byte recovery_counter = 0;
+
 LiquidCrystal lcd(8,9,4,5,6,7);
 
 
@@ -85,6 +90,13 @@ void back_cooler_control(int *);
 void running_temp_print(void);
 void running_humi_print(void);    
 
+
+void hours_left_backup(byte *);
+void target_temp_backup(void);
+void rst_recovery(void);
+void rst_recovery_manage(byte *);
+void rst_print(void);
+
 //------------------------ SETUP FUNCTION -------------------------
 
 void setup() {
@@ -95,8 +107,8 @@ void setup() {
   
   lcd.setCursor(0,0);
   lcd.print("System starting..");
-  DS3231_init();
-  delay(1000);
+  //DS3231_init();
+  delay(500);
   //lcd.clear();
   
   // put your setup code here, to run once:
@@ -113,8 +125,11 @@ void setup() {
 
   //watchdog timer functionality
   wdt_disable();
+
+  rst_recovery(); //loading values from rtc backup registers
+  
   delay(3000); //important delay to avoid reboot loop
-  wdt_enable(WDTO_8S); //set watchdog timer at 4 seconds
+  wdt_enable(WDTO_8S); //set watchdog timer at 8 seconds
 
 
   lcd.clear();
@@ -127,26 +142,43 @@ void setup() {
 void loop() {
   // put your main code here, to run repeatedly:
 
-
   //reading buttons
   byte button = 0;
   button = button_read();
 
-  //SYSTEM OPERATING IN REGARD START/STOP
-  if(start_sig == 1)
-  {
-    //SYSTEM RUNNING
-    system_running();
-    
-  }
-  else
-  {
-    //SYSTEM IDLING
-    system_idle(&button);
 
+  if(rst_flag == 1){
+    if(recovery_counter<200){
+      rst_recovery_manage(&button);
+      recovery_counter++;
+      delay(60); //system will wait for 6 seconds after reset for some action from user, if not it will resume like it was automatic reset 
+      if(rst_flag == 0) {recovery_counter = 0; goto label;}
+    }
+    else
+    {
+      rst_flag = 0;
+      recovery_counter = 0;
+      start_sig = 1; //system starts automatically after 6 seconds, if no user actions
+    }
   }
-  
+
+
+  if(rst_flag == 0)
+  {  
+    //SYSTEM OPERATING IN REGARD START/STOP
+    if(start_sig == 1)
+    {
+      //SYSTEM RUNNING
+      system_running();
+    }
+    else
+    {
+      //SYSTEM IDLING
+      system_idle(&button);
+    }
+  } 
   /***********WATCHDOG TIMER RESET*********/
+  label:
   wdt_reset();
 
 }
@@ -183,7 +215,9 @@ void system_running(void)
     //TIME DISPLAYING FUNCTION
     byte hours = time_display();
     if(hours == 0) start_sig = 0;
-
+    
+    hours_left_backup(&hours);//save remaining hours to rtc register at every iteration
+    
     delay(1000); //if it is 200 code does not work??????? WHY???? PROBABLY INTERFERING WITH SENSOR oR RTC?
 }
 
@@ -237,6 +271,8 @@ void start_system(byte *btn)
     start_sig = 1;
     DS3231_init(); //INITIALIZE TIME AS 00:01:01 day 1 when system start working IMPORTANT
     lcd.clear();
+    
+    target_temp_backup(); //save determined target temperature to rtc register, just once before start
   }  
 }
 
@@ -480,8 +516,8 @@ void set_temp(byte *btn)
   
 }
 
-void set_hours(byte *btn)
-{
+void set_hours(byte *btn){
+  
   byte tmp_btn = *btn;
   switch(tmp_btn)
   {
@@ -595,17 +631,19 @@ void dht_read(void)
 
 //-------------------------------------- RTC -----------------------------------------
 
-void DS3231_settime(void){
+void DS3231_settime(void)
+{
 
     Wire.beginTransmission(DS3231_I2C_ADDRESS);
-    Wire.write(0); // set next input to start at the seconds register (register 0)
+    Wire.write(0); // set next input to start at the SECONDS register (register 0)
     for(int i=0; i<=6; i++){
         Wire.write(ds3231_Store[i]);
     }
     Wire.endTransmission();
 }
 
-void DS3231_init(void){
+void DS3231_init(void)
+{
 
     for(int i=0; i<=6; i++)
         ds3231_Store[i]=init3231_Store[i];
@@ -613,7 +651,8 @@ void DS3231_init(void){
     DS3231_settime();
 }
 
-void DS3231_Readtime(void){
+void DS3231_Readtime(void)
+{
   
     Wire.beginTransmission(DS3231_I2C_ADDRESS);
     Wire.write(0);
@@ -633,3 +672,166 @@ void DS3231_Readtime(void){
         ds3231_Store[i] = changeHexToInt(ds3231_Store[i]);
     }
 }
+
+
+/************************** BACKUP AND RECOVERY FUNCTIONS ********************************/
+
+
+void target_temp_backup(void)
+{
+    /*
+    //TREBA SNIMITI U EEPROM
+    Wire.beginTransmission(DS3231_I2C_ADDRESS);
+    Wire.write(0x05); // set next input to start at the MONTH register (register 5)
+    //Wire.write(target_temp);
+    Wire.write(0x09);//for DEBUG
+
+
+    Wire.endTransmission();
+    */
+}
+
+
+void hours_left_backup(byte *hrs)
+{
+    byte hours_left = *hrs;
+    
+    byte hours_div =  0;
+    byte hours_mod = 0;
+    hours_div = hours_left/10;
+    hours_mod = hours_left%10;
+
+    
+    Wire.beginTransmission(DS3231_I2C_ADDRESS);
+    Wire.write(0x05); // set next input to start at the MONTH register (register 5)
+    //Wire.write(hours_left);
+    //Wire.write(0x09);//for DEBUG
+
+    Wire.write(hours_div);//saved into 0x05 register
+    Wire.write(hours_mod);//saved into 0x06 register
+
+    //Wire.write(0x02);//saved into 0x05 register
+    //Wire.write(0x09);//saved into 0x06 register
+    
+    Wire.endTransmission();
+}
+
+
+//recovery function needs to be called after wdt_disable and before wdt_enable
+void rst_recovery(void)
+{
+  
+    byte hours_backup_tens = 0;
+    byte hours_backup_ones = 0;
+    
+    //we need to read backup registers
+    Wire.beginTransmission(DS3231_I2C_ADDRESS);
+    Wire.write(0x05);
+    Wire.endTransmission();
+    Wire.requestFrom(DS3231_I2C_ADDRESS, 2);//reading only 2 registers
+    
+    hours_backup_tens = Wire.read() & 0x0f; //tens of hours read and stored
+    hours_backup_ones = Wire.read() & 0x0f; //ones of hours read and stored
+
+    byte hours_backup = ((hours_backup_tens<<4) | hours_backup_ones);
+
+    hours_backup = changeHexToInt(hours_backup);
+    //hours_backup_tens = changeHexToInt(hours_backup_tens);
+    //hours_backup_ones = changeHexToInt(hours_backup_ones);
+  
+    if(hours_backup > 1)
+    {
+      //target_temp  = temp_backup;
+      target_hours = hours_backup;
+      rst_flag = 1;
+    }
+    lcd.clear();
+    lcd.print("TEMP");
+    lcd.setCursor(5,0);
+    lcd.print("0");
+    //lcd.print(temp_backup);
+    lcd.setCursor(0,1);
+    lcd.print("HOURS_LEFT");
+    lcd.setCursor(12,1);
+    lcd.print(hours_backup);
+    delay(3000);
+}
+
+
+void rst_print(void)
+{
+  //lcd.clear();
+  lcd.setCursor(3,0);
+  lcd.print("USER RESET ?");
+  lcd.setCursor(2,1);
+  lcd.print("YES");
+  lcd.setCursor(9,1);
+  lcd.print("NO");  
+  
+}
+
+
+void rst_recovery_manage(byte *btn)
+{
+      byte tmp_btn = *btn;
+
+      //rst_print();
+      
+      if(tmp_btn != 1)
+      {
+        switch(tmp_btn)
+        {
+          case 2: {
+            rst_type = 0;
+            lcd.clear();
+            //lcd.print("Pressed: LEFT");
+            break;
+          }
+          case 5: {
+            rst_type = 1;
+            lcd.clear();
+            //lcd.print("Pressed: RIGHT"); 
+            break;
+          }
+          default: {break;}  
+        }    
+      }
+
+      rst_print();
+
+      if(rst_type == 0)
+      {
+        lcd.setCursor(1,1);
+        lcd.print(">");
+      }
+
+      if(rst_type == 1)
+      {
+        lcd.setCursor(8,1);
+        lcd.print(">");
+      }
+
+      if(tmp_btn == 1)//select pressed
+      {
+        lcd.clear();
+        if(rst_type == 0) //MANUAL RESET LOAD DEFAULT VALUES AND GO TO IDLE STATE
+        {
+          rst_flag = 0;
+          target_temp = TEMP_DEFAULT;
+          target_hours = HOURS_DEFAULT;
+          start_sig = 0;
+        }
+
+        if(rst_type == 1) //AUTOMATIC RESET LOAD BACKUP VALUES AND GO TO RUNNING STATE
+        {
+          rst_flag = 0;
+          //target_temp and target_hours BACKUP VALUES ARE ALREADY LOADED IN SETUP() -> reset_recovery() function
+          start_sig = 1;
+        }
+        //actions declared above are taken when select button is pressed
+      }
+
+}
+
+
+//void clear_backup_data(){}
