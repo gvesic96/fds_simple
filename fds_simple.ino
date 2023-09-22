@@ -224,7 +224,7 @@ void system_running(void)
     
     hours_left_backup(&hours);//save remaining hours to rtc register at every iteration
     
-    delay(1000); //if it is 200 code does not work??????? WHY???? PROBABLY INTERFERING WITH SENSOR oR RTC?
+    delay(1000);
 }
 
 
