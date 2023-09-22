@@ -100,6 +100,7 @@ void rst_recovery(void);
 void rst_recovery_manage(byte *);
 void rst_print(void);
 
+void clear_backup_data(void);
 //------------------------ SETUP FUNCTION -------------------------
 
 void setup() {
@@ -818,6 +819,7 @@ void rst_recovery_manage(byte *btn)
           target_temp = TEMP_DEFAULT;
           target_hours = HOURS_DEFAULT;
           start_sig = 0;
+          clear_backup_data();
         }
 
         if(rst_type == 1) //AUTOMATIC RESET LOAD BACKUP VALUES AND GO TO RUNNING STATE
@@ -829,4 +831,16 @@ void rst_recovery_manage(byte *btn)
         //actions declared above are taken when select button is pressed
       }
 
+}
+
+void clear_backup_data(void)
+{
+  //no need for resetting target temp as it is not use in if clause, and to save cycles of EEPROM as much as possible  
+    Wire.beginTransmission(DS3231_I2C_ADDRESS);
+    Wire.write(0x06); //set adress for first write
+    
+    Wire.write(0x00); //clearing remaining hours in YEAR register
+    
+    Wire.endTransmission();
+    
 }
