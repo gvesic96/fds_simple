@@ -8,14 +8,17 @@ Software development started 6.8.2023.
 
 /*Libraries*/
 
-/*2x16 LCD display*/
+/*2x16 LCD display library*/
 #include <LiquidCrystal.h>
 
 /*I2C library*/
 #include <Wire.h>
 
-/*WatchDog timer*/
+/*WatchDog timer library*/
 #include <avr/wdt.h>
+
+/*EEPROM library*/
+#include <EEPROM.h>
 
 /*------------------------ MACROS -------------------------*/
 
@@ -177,8 +180,10 @@ void loop() {
       system_idle(&button);
     }
   } 
-  /***********WATCHDOG TIMER RESET*********/
+  //important label if user chooses user reset to prevent system from starting in system_idle function with default values
   label:
+  
+  /***********WATCHDOG TIMER RESET*********/
   wdt_reset();
 
 }
@@ -272,7 +277,7 @@ void start_system(byte *btn)
     DS3231_init(); //INITIALIZE TIME AS 00:01:01 day 1 when system start working IMPORTANT
     lcd.clear();
     
-    target_temp_backup(); //save determined target temperature to rtc register, just once before start
+    target_temp_backup(); //save determined target temperature to EEPROM, just once before start
   }  
 }
 
@@ -679,16 +684,9 @@ void DS3231_Readtime(void)
 
 void target_temp_backup(void)
 {
-    /*
-    //TREBA SNIMITI U EEPROM
-    Wire.beginTransmission(DS3231_I2C_ADDRESS);
-    Wire.write(0x05); // set next input to start at the MONTH register (register 5)
-    //Wire.write(target_temp);
-    Wire.write(0x09);//for DEBUG
-
-
-    Wire.endTransmission();
-    */
+    //DETERMINED TARGET TEMPERATURE TO BE SAVED TO EEPROM
+    EEPROM.update(0, target_temp); //POSSIBLY BETTER TO USE EEPROM.update FUNCTION
+    delay(10);//EEPROM takes 3.3ms to write into so i give him 10ms for any case
 }
 
 
@@ -721,6 +719,9 @@ void hours_left_backup(byte *hrs)
 void rst_recovery(void)
 {
   
+    byte temp_backup = 0;
+    temp_backup = EEPROM.read(0);
+    
     byte hours_backup_tens = 0;
     byte hours_backup_ones = 0;
     
@@ -741,20 +742,19 @@ void rst_recovery(void)
   
     if(hours_backup > 1)
     {
-      //target_temp  = temp_backup;
+      target_temp  = temp_backup;
       target_hours = hours_backup;
       rst_flag = 1;
     }
     lcd.clear();
     lcd.print("TEMP");
     lcd.setCursor(5,0);
-    lcd.print("0");
-    //lcd.print(temp_backup);
+    lcd.print(temp_backup);
     lcd.setCursor(0,1);
     lcd.print("HOURS_LEFT");
     lcd.setCursor(12,1);
     lcd.print(hours_backup);
-    delay(3000);
+    delay(2000);
 }
 
 
@@ -763,7 +763,7 @@ void rst_print(void)
   //lcd.clear();
   lcd.setCursor(3,0);
   lcd.print("USER RESET ?");
-  lcd.setCursor(2,1);
+  lcd.setCursor(4,1);
   lcd.print("YES");
   lcd.setCursor(9,1);
   lcd.print("NO");  
@@ -801,7 +801,7 @@ void rst_recovery_manage(byte *btn)
 
       if(rst_type == 0)
       {
-        lcd.setCursor(1,1);
+        lcd.setCursor(3,1);
         lcd.print(">");
       }
 
