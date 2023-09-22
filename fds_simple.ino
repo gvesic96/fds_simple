@@ -699,17 +699,12 @@ void hours_left_backup(byte *hrs)
     hours_div = hours_left/10;
     hours_mod = hours_left%10;
 
+    hours_left = 0;
+    hours_left = ((hours_div << 4) | hours_mod);
     
     Wire.beginTransmission(DS3231_I2C_ADDRESS);
-    Wire.write(0x05); // set next input to start at the MONTH register (register 5)
-    //Wire.write(hours_left);
-    //Wire.write(0x09);//for DEBUG
-
-    Wire.write(hours_div);//saved into 0x05 register
-    Wire.write(hours_mod);//saved into 0x06 register
-
-    //Wire.write(0x02);//saved into 0x05 register
-    //Wire.write(0x09);//saved into 0x06 register
+    Wire.write(0x06); //set adress for first write
+    Wire.write(hours_left); //saving remaining hours to YEAR register
     
     Wire.endTransmission();
 }
@@ -725,36 +720,38 @@ void rst_recovery(void)
     byte hours_backup_tens = 0;
     byte hours_backup_ones = 0;
     
-    //we need to read backup registers
+    //we need to read backup register
     Wire.beginTransmission(DS3231_I2C_ADDRESS);
-    Wire.write(0x05);
+    Wire.write(0x06);
     Wire.endTransmission();
-    Wire.requestFrom(DS3231_I2C_ADDRESS, 2);//reading only 2 registers
+    Wire.requestFrom(DS3231_I2C_ADDRESS, 1);//reading only 1 register, YEAR register
+
+    byte hours_left = 0;
+    hours_left = Wire.read(); //all hours left
     
-    hours_backup_tens = Wire.read() & 0x0f; //tens of hours read and stored
-    hours_backup_ones = Wire.read() & 0x0f; //ones of hours read and stored
+    hours_backup_tens = (hours_left & 0xf0) >> 4;  //taking higher 4 bits
+    hours_backup_ones = hours_left & 0x0f;         //taking lower 4 bits
+    
+    hours_backup_tens = changeHexToInt(hours_backup_tens);
+    hours_backup_ones = changeHexToInt(hours_backup_ones);
 
-    byte hours_backup = ((hours_backup_tens<<4) | hours_backup_ones);
-
-    hours_backup = changeHexToInt(hours_backup);
-    //hours_backup_tens = changeHexToInt(hours_backup_tens);
-    //hours_backup_ones = changeHexToInt(hours_backup_ones);
-  
-    if(hours_backup > 1)
+    byte hours_backup = hours_backup_tens*10 + hours_backup_ones;//calculating remaining hours
+    
+    if(hours_backup >= 1)
     {
       target_temp  = temp_backup;
       target_hours = hours_backup;
       rst_flag = 1;
     }
     lcd.clear();
-    lcd.print("TEMP");
-    lcd.setCursor(5,0);
+    lcd.print("TEMP:");
+    lcd.setCursor(6,0);
     lcd.print(temp_backup);
     lcd.setCursor(0,1);
-    lcd.print("HOURS_LEFT");
+    lcd.print("HOURS_LEFT:");
     lcd.setCursor(12,1);
     lcd.print(hours_backup);
-    delay(2000);
+    delay(1000);
 }
 
 
@@ -767,6 +764,18 @@ void rst_print(void)
   lcd.print("YES");
   lcd.setCursor(9,1);
   lcd.print("NO");  
+
+  if(rst_type == 0)
+  {
+      lcd.setCursor(3,1);
+      lcd.print(">");
+  }
+
+  if(rst_type == 1)
+  {
+      lcd.setCursor(8,1);
+      lcd.print(">");
+  }
   
 }
 
@@ -774,9 +783,8 @@ void rst_print(void)
 void rst_recovery_manage(byte *btn)
 {
       byte tmp_btn = *btn;
-
-      //rst_print();
       
+      //CHOOSING RESET TYPE
       if(tmp_btn != 1)
       {
         switch(tmp_btn)
@@ -797,20 +805,10 @@ void rst_recovery_manage(byte *btn)
         }    
       }
 
+      //PRINTING RESET SCREEN
       rst_print();
 
-      if(rst_type == 0)
-      {
-        lcd.setCursor(3,1);
-        lcd.print(">");
-      }
-
-      if(rst_type == 1)
-      {
-        lcd.setCursor(8,1);
-        lcd.print(">");
-      }
-
+      //EXITING RESET SCREEN IF SELECT PRESSED IN ORDER OF TYPE OF RESET
       if(tmp_btn == 1)//select pressed
       {
         lcd.clear();
@@ -832,6 +830,3 @@ void rst_recovery_manage(byte *btn)
       }
 
 }
-
-
-//void clear_backup_data(){}
