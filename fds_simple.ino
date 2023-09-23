@@ -152,7 +152,7 @@ void loop() {
 
 
   if(rst_flag == 1){
-    if(recovery_counter<200){
+    if(recovery_counter<100){
       rst_recovery_manage(&button);
       recovery_counter++;
       delay(60); //system will wait for 6 seconds after reset for some action from user, if not it will resume like it was automatic reset 
