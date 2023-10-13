@@ -49,7 +49,7 @@ byte target_feature = 1;
 bool start_sig = 0;
 
 byte ds3231_Store[7] = {0};
-byte init3231_Store[7]={0x01,0x01,0x00,0x01,0x01,0x01,0x01};//setting time to 00:01:01, day 1
+byte init3231_Store[7]={0x01,0x00,0x00,0x01,0x01,0x01,0x01};//setting time to 00:00:01, day 1, month 1, year 1;
 
 bool heater_permit = 1;
 bool cooler_permit = 0;
@@ -163,6 +163,7 @@ void loop() {
       rst_flag = 0;
       recovery_counter = 0;
       start_sig = 1; //system starts automatically after 6 seconds, if no user actions
+      DS3231_init();//initializing time to start from zero
     }
   }
 
@@ -827,6 +828,8 @@ void rst_recovery_manage(byte *btn)
           rst_flag = 0;
           //target_temp and target_hours BACKUP VALUES ARE ALREADY LOADED IN SETUP() -> reset_recovery() function
           start_sig = 1;
+          //initialize time from to start at zero
+          DS3231_init();
         }
         //actions declared above are taken when select button is pressed
       }
