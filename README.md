@@ -9,3 +9,5 @@ Arduino project - Fruit Dehydratation System (Simple version)
 
 
 ![image](https://github.com/user-attachments/assets/ae3efc1d-34e1-4692-b1df-9566122d86ba)
+
+<img width="1268" height="532" alt="fds_simple" src="https://github.com/user-attachments/assets/d718c531-2919-40ac-9785-c66b39203b9e" />
